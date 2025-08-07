@@ -1,4 +1,4 @@
-# LinkNest – Save & Tag Your Links
+# SimpleTraining – Get one exercise per day
 Simple app built with Next.js 14 and Supabase.
 
 ## ✨ Features
