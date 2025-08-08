@@ -6,96 +6,107 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    // Preberi nastavitve iz request body
     const { level = 'srednje', equipment = 'bodyweight' } = req.body || {}
-    console.log('Workout settings:', { level, equipment })
-
     const supabase = createPagesServerClient({ req, res })
-  
-    // Debug: preveri session
-    const { data: { session } } = await supabase.auth.getSession()
-   
     
-    const {
-      data: { user },
-      error: userError
-    } = await supabase.auth.getUser()
-
-    if (userError) {
-      console.log('User error:', userError)
-      // Če je user ne obstaja, pošlji 401 z jasnim sporočilom
-      if (userError.message.includes('does not exist')) {
-        return res.status(401).json({ 
-          error: 'User not found - please log in again',
-          code: 'USER_NOT_FOUND'
-        })
-      }
-      return res.status(401).json({ error: 'Auth error: ' + userError.message })
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
+      return res.status(401).json({ error: 'Unauthorized' })
     }
 
-    if (!user) {
-      console.log('No user found')
-      return res.status(401).json({ error: 'Unauthorized - no user' })
-    }
-
-  
     const today = new Date().toISOString().split('T')[0]
     
-    const { data: existing, error: existingError } = await supabase
+    // Check for existing workout
+    const { data: existing } = await supabase
       .from('workouts')
       .select('*')
       .eq('user_id', user.id)
       .eq('date', today)
       .maybeSingle()
 
-    if (existingError) {
-      console.log('Error checking existing workouts:', existingError)
-      return res.status(500).json({ error: 'Database error checking existing workouts' })
-    }
-
     if (existing) {
-      console.log('Found existing workout, returning it')
       return res.status(200).json(existing)
     }
 
-    console.log('No existing workout found, creating new one...')
+    // Get user's workout history for personalization
+    const { data: recentWorkouts } = await supabase
+      .from('workouts')
+      .select('content, date')
+      .eq('user_id', user.id)
+      .order('date', { ascending: false })
+      .limit(7)
 
-    console.log('Reading user profile...')
-    const { data: profile, error: profileError } = await supabase
+    // Get user profile for personalization
+    const { data: profile } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', user.id)
       .single()
 
-    if (profileError) {
-      console.log('Error reading profile:', profileError)
-      return res.status(500).json({ error: 'Database error reading profile' })
-    }
+    // Enhanced prompt with better structure and personalization
+    const equipmentText = equipment === 'bodyweight' ? 'samo z lastno težo telesa (brez dodatne opreme)' : 'z gimnastično opremo (uteži, elastike, itd.)'
+    const levelText = {
+      'lahko': 'začetniška (manjša intenzivnost, več počitka)',
+      'srednje': 'srednja (zmerna intenzivnost, uravnoteženo)',
+      'težko': 'napredna (visoka intenzivnost, manj počitka)'
+    }[level] || 'srednja'
 
-    console.log('Profile found:', profile)
+    const recentWorkoutsSummary = recentWorkouts?.length > 0 
+      ? `\n\nPrejšnje vadbe uporabnika (da se izogneš ponavljanju):\n${recentWorkouts.map(w => `${w.date}: ${w.content?.substring(0, 100)}...`).join('\n')}`
+      : ''
 
-    const prompt = `Generate a personalized circular training workout for today (${today}). 
+    const prompt = `Si strokovni osebni trener. Ustvari personalizirano krožno vadbo za danes (${today}).
 
-User preferences:
-- Difficulty level: ${level}
-- Equipment: ${equipment === 'bodyweight' ? 'bodyweight only' : 'with gym equipment'}
+ZAHTEVE:
+- Težavnost: ${levelText}
+- Oprema: ${equipmentText}
+- Jezik: slovenščina
+- Trajanje: 25-35 minut
+- Stil: krožna vadba (circuit training)
 
-Create a workout that matches the user's difficulty preference (${level}) and equipment choice (${equipment}).
+STRUKTURA VADBE:
+1. OGREVANJE (5 min): dinamično ogrevanje vseh mišičnih skupin
+2. GLAVNA VADBA (20-25 min): 3-4 krogi po 4-6 vaj, vsaka vaja 45 sek delo + 15 sek počitek
+3. ZAKLJUČEK (5 min): raztezanje in umiritev
 
-Use this format:
-${today}
-Warmup:
-...
-Main Part:
-...
-Finisher:
-...`
+NAVODILA:
+- Vključi različne mišične skupine
+- Kombiniraj moč, vzdržljivost in koordinacijo
+- Jasno opiši tehniko izvajanja vaj
+- Dodaj alternativne variante za različne ravni pripravljenosti
+- Motivacijski ton pisanja
+- Poudarek na varnosti
+
+FORMAT ODGOVORA:
+🔥 KROŽNA VADBA - ${today}
+
+💪 OGREVANJE (5 min):
+[seznam vaj z opisom]
+
+🏋️ GLAVNA VADBA (${level.toUpperCase()} - ${equipmentText}):
+KOG 1: [4-6 vaj]
+KOG 2: [4-6 vaj]  
+KOG 3: [4-6 vaj]
+
+🧘 ZAKLJUČEK (5 min):
+[raztezanje in umiritev]
+
+💡 NASVETI:
+[koristni nasveti za vadbo]${recentWorkoutsSummary}
+
+Ustvari motivacijsko, varno in učinkovito vadbo!`
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [{ role: 'system', content: 'Vedno odgovarjaj kot strokovnjak za fitnes.' }],
-      max_tokens: 512,
-      temperature: 0.7,
+      model: 'gpt-4o-mini',
+      messages: [
+        { 
+          role: 'system', 
+          content: 'Si vrhunski osebni trener s 15+ leti izkušenj. Specializiraš se za krožne vadbe in motivacijo. Vedno pišeš v slovenščini z motivacijskim tonom.' 
+        },
+        { role: 'user', content: prompt }
+      ],
+      max_tokens: 800,
+      temperature: 0.8,
     })
 
     const content = completion.choices[0].message.content
@@ -104,6 +115,8 @@ Finisher:
       user_id: user.id,
       date: today,
       content,
+      level,
+      equipment
     }).select().single()
 
     if (error) return res.status(500).json({ error })
