@@ -51,7 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       'težko': 'napredna (visoka intenzivnost, manj počitka)'
     }[level] || 'srednja'
 
-    const recentWorkoutsSummary = recentWorkouts?.length > 0 
+    const recentWorkoutsSummary = Array.isArray(recentWorkouts) && recentWorkouts.length > 0
       ? `\n\nPrejšnje vadbe uporabnika (da se izogneš ponavljanju):\n${recentWorkouts.map(w => `${w.date}: ${w.content?.substring(0, 100)}...`).join('\n')}`
       : ''
 
@@ -97,7 +97,7 @@ KOG 3: [4-6 vaj]
 Ustvari motivacijsko, varno in učinkovito vadbo!`
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-3.5-turbo',
       messages: [
         { 
           role: 'system', 
@@ -105,7 +105,7 @@ Ustvari motivacijsko, varno in učinkovito vadbo!`
         },
         { role: 'user', content: prompt }
       ],
-      max_tokens: 800,
+      max_tokens: 512,
       temperature: 0.8,
     })
 

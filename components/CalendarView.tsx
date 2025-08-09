@@ -27,7 +27,13 @@ export default function CalendarView({ workouts, onWorkoutSelect, selectedWorkou
   }, {})
 
   // Generate calendar days
-  const calendarDays = []
+  const calendarDays: Array<{
+    day: number
+    dateStr: string
+    workout: any
+    isToday: boolean
+    isSelected: boolean
+  } | null> = []
   
   // Empty cells for days before month starts
   for (let i = 0; i < startingDayOfWeek; i++) {
