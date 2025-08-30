@@ -119,7 +119,10 @@ Ustvari motivacijsko, varno in učinkovito vadbo!`
       equipment
     }).select().single()
 
-    if (error) return res.status(500).json({ error })
+    if (error) {
+      return res.status(500).json({ error })
+    }
+    
     return res.status(200).json(data)
   } catch (error) {
     console.error('API Error:', error)
